@@ -14,6 +14,11 @@ import {
   type RelationalAlgebraResult,
 } from "@/lib/relational-algebra";
 import {
+  buildOperatorGraph,
+  type OperatorGraph,
+  type OperatorGraphNode,
+} from "@/lib/operator-graph";
+import {
   type QueryValidationResult,
   validateSqlQuery,
 } from "@/lib/sql-validator";
@@ -30,6 +35,7 @@ export default function QueryValidatorWorkbench() {
   const [result, setResult] = useState<QueryValidationResult | null>(null);
   const [toast, setToast] = useState<ValidationToast | null>(null);
   const algebra = result?.isValid ? buildRelationalAlgebra(result) : null;
+  const operatorGraph = result?.isValid ? buildOperatorGraph(result) : null;
 
   useEffect(() => {
     if (!toast) {
@@ -54,7 +60,7 @@ export default function QueryValidatorWorkbench() {
         ? "Consulta validada"
         : "Consulta com pendencias",
       description: validationResult.isValid
-        ? "Consulta validada e algebra relacional gerada com sucesso."
+        ? "Algebra relacional e grafo de operadores gerados com sucesso."
         : `${validationResult.issues.length} problema(s) encontrado(s). Confira os detalhes abaixo.`,
     });
   };
@@ -64,15 +70,16 @@ export default function QueryValidatorWorkbench() {
       <div className="rounded-[2rem] border border-black/6 bg-white/80 shadow-[0_28px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
         <div className="border-b border-black/6 px-6 py-5 dark:border-white/10 sm:px-8">
           <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[0.68rem] font-semibold tracking-[0.22em] text-emerald-700 uppercase dark:text-emerald-300">
-            HU 01 + HU 02
+            HU 01 + HU 02 + HU 03
           </span>
 
           <h2 className="mt-4 font-heading text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
-            Entrada, validacao e algebra relacional
+            Entrada, algebra relacional e grafo
           </h2>
           <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
             Digite uma consulta SQL para validar comandos, operadores, tabelas,
-            atributos e gerar a expressao equivalente em algebra relacional.
+            atributos, gerar algebra relacional e visualizar o grafo de
+            operadores.
           </p>
         </div>
 
@@ -161,6 +168,7 @@ export default function QueryValidatorWorkbench() {
               </div>
 
               {algebra ? <RelationalAlgebraBlock algebra={algebra} /> : null}
+              {operatorGraph ? <OperatorGraphBlock graph={operatorGraph} /> : null}
 
               <RecognitionBlock
                 title="Consulta normalizada"
@@ -175,6 +183,155 @@ export default function QueryValidatorWorkbench() {
       {toast ? <ValidationToast key={toast.id} toast={toast} /> : null}
     </div>
   );
+}
+
+function OperatorGraphBlock({ graph }: { graph: OperatorGraph }) {
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+
+  return (
+    <div className="rounded-[1.5rem] border border-emerald-500/20 bg-emerald-500/10 px-5 py-5 dark:border-emerald-300/20 dark:bg-emerald-300/8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[0.68rem] font-semibold tracking-[0.18em] text-emerald-700 uppercase dark:text-emerald-300">
+            HU 03
+          </p>
+          <h3 className="mt-2 font-heading text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
+            Grafo de operadores
+          </h3>
+          <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
+            Leia o fluxo de baixo para cima: tabelas nas folhas, operadores no
+            meio e a projecao final como raiz.
+          </p>
+        </div>
+
+        <div className="rounded-full border border-emerald-500/20 bg-white/60 px-3 py-1 font-mono text-xs text-emerald-800 dark:border-emerald-300/20 dark:bg-white/8 dark:text-emerald-200">
+          {graph.nodes.length} nos / {graph.edges.length} arestas
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-x-auto rounded-[1.25rem] border border-black/6 bg-white/70 px-4 py-5 dark:border-white/10 dark:bg-[#0f1821]">
+        <GraphTree nodeId={graph.rootId} nodeById={nodeById} graph={graph} />
+      </div>
+
+      <div className="mt-4 rounded-[1rem] border border-black/6 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-white/6">
+        <p className="text-[0.68rem] font-semibold tracking-[0.16em] text-slate-500 uppercase dark:text-slate-400">
+          Fluxo de resultados intermediarios
+        </p>
+        <div className="mt-3 grid gap-2 text-xs text-slate-700 dark:text-slate-200">
+          {graph.edges.map((edge) => (
+            <p key={edge.id} className="font-mono">
+              {formatGraphNodeLabel(nodeById.get(edge.from))} {"->"}{" "}
+              {formatGraphNodeLabel(nodeById.get(edge.to))}
+              <span className="ml-2 font-sans text-slate-500 dark:text-slate-400">
+                {edge.label}
+              </span>
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GraphTree({
+  nodeId,
+  nodeById,
+  graph,
+}: {
+  nodeId: string;
+  nodeById: Map<string, OperatorGraphNode>;
+  graph: OperatorGraph;
+}) {
+  const node = nodeById.get(nodeId);
+  const childEdges = graph.edges.filter((edge) => edge.to === nodeId);
+
+  if (!node) {
+    return null;
+  }
+
+  return (
+    <div className="flex min-w-max flex-col items-center">
+      <GraphNodeCard node={node} />
+
+      {childEdges.length > 0 ? (
+        <>
+          <div className="h-5 w-px bg-slate-300 dark:bg-slate-600" />
+          <div className="flex items-start justify-center gap-4">
+            {childEdges.map((edge) => (
+              <div key={edge.id} className="flex flex-col items-center">
+                <span className="mb-2 rounded-full border border-black/6 bg-white px-2 py-1 text-[0.62rem] font-semibold text-slate-500 dark:border-white/10 dark:bg-white/8 dark:text-slate-400">
+                  {edge.label}
+                </span>
+                <GraphTree nodeId={edge.from} nodeById={nodeById} graph={graph} />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function GraphNodeCard({ node }: { node: OperatorGraphNode }) {
+  const styles = getGraphNodeStyles(node.type);
+
+  return (
+    <div
+      className={`min-w-44 max-w-64 rounded-[1rem] border px-4 py-3 text-center shadow-sm ${styles.container}`}
+    >
+      <div
+        className={`mx-auto flex size-9 items-center justify-center rounded-full font-mono text-lg font-semibold ${styles.symbol}`}
+      >
+        {node.symbol}
+      </div>
+      <p className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+        {node.label}
+      </p>
+      <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-600 dark:text-slate-300">
+        {node.detail}
+      </p>
+    </div>
+  );
+}
+
+function getGraphNodeStyles(type: OperatorGraphNode["type"]) {
+  if (type === "projection") {
+    return {
+      container:
+        "border-cyan-500/20 bg-cyan-50 text-cyan-950 dark:border-cyan-300/20 dark:bg-cyan-950/35",
+      symbol: "bg-cyan-600 text-white dark:bg-cyan-300 dark:text-cyan-950",
+    };
+  }
+
+  if (type === "selection") {
+    return {
+      container:
+        "border-amber-500/20 bg-amber-50 text-amber-950 dark:border-amber-300/20 dark:bg-amber-950/35",
+      symbol: "bg-amber-500 text-white dark:bg-amber-300 dark:text-amber-950",
+    };
+  }
+
+  if (type === "join") {
+    return {
+      container:
+        "border-sky-500/20 bg-sky-50 text-sky-950 dark:border-sky-300/20 dark:bg-sky-950/35",
+      symbol: "bg-sky-600 text-white dark:bg-sky-300 dark:text-sky-950",
+    };
+  }
+
+  return {
+    container:
+      "border-slate-300/70 bg-slate-50 text-slate-950 dark:border-white/10 dark:bg-white/6",
+    symbol: "bg-slate-900 text-white dark:bg-white dark:text-slate-950",
+  };
+}
+
+function formatGraphNodeLabel(node: OperatorGraphNode | undefined) {
+  if (!node) {
+    return "no desconhecido";
+  }
+
+  return `${node.symbol} ${node.label}`;
 }
 
 function RelationalAlgebraBlock({
