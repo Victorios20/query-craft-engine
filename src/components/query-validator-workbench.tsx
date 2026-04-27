@@ -10,6 +10,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  buildExecutionPlan,
+  type ExecutionPlan,
+} from "@/lib/execution-plan";
+import {
   buildRelationalAlgebra,
   type RelationalAlgebraResult,
 } from "@/lib/relational-algebra";
@@ -18,6 +22,10 @@ import {
   type OperatorGraph,
   type OperatorGraphNode,
 } from "@/lib/operator-graph";
+import {
+  buildOptimizedQueryPlan,
+  type OptimizedQueryPlan,
+} from "@/lib/query-optimizer";
 import {
   type QueryValidationResult,
   validateSqlQuery,
@@ -36,6 +44,8 @@ export default function QueryValidatorWorkbench() {
   const [toast, setToast] = useState<ValidationToast | null>(null);
   const algebra = result?.isValid ? buildRelationalAlgebra(result) : null;
   const operatorGraph = result?.isValid ? buildOperatorGraph(result) : null;
+  const optimizedPlan = result?.isValid ? buildOptimizedQueryPlan(result) : null;
+  const executionPlan = optimizedPlan ? buildExecutionPlan(optimizedPlan) : null;
 
   useEffect(() => {
     if (!toast) {
@@ -60,7 +70,7 @@ export default function QueryValidatorWorkbench() {
         ? "Consulta validada"
         : "Consulta com pendencias",
       description: validationResult.isValid
-        ? "Algebra relacional e grafo de operadores gerados com sucesso."
+        ? "Algebra, grafo logico, grafo otimizado e plano de execucao gerados com sucesso."
         : `${validationResult.issues.length} problema(s) encontrado(s). Confira os detalhes abaixo.`,
     });
   };
@@ -70,16 +80,16 @@ export default function QueryValidatorWorkbench() {
       <div className="rounded-[2rem] border border-black/6 bg-white/80 shadow-[0_28px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
         <div className="border-b border-black/6 px-6 py-5 dark:border-white/10 sm:px-8">
           <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[0.68rem] font-semibold tracking-[0.22em] text-emerald-700 uppercase dark:text-emerald-300">
-            HU 01 + HU 02 + HU 03
+            HU 01 + HU 02 + HU 03 + HU 04 + HU 05
           </span>
 
           <h2 className="mt-4 font-heading text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
-            Entrada, algebra relacional e grafo
+            Entrada, algebra, grafo e execucao
           </h2>
           <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
             Digite uma consulta SQL para validar comandos, operadores, tabelas,
-            atributos, gerar algebra relacional e visualizar o grafo de
-            operadores.
+            atributos, gerar algebra relacional, visualizar o grafo e comparar
+            a estrategia otimizada junto com a ordem de execucao.
           </p>
         </div>
 
@@ -169,6 +179,12 @@ export default function QueryValidatorWorkbench() {
 
               {algebra ? <RelationalAlgebraBlock algebra={algebra} /> : null}
               {operatorGraph ? <OperatorGraphBlock graph={operatorGraph} /> : null}
+              {optimizedPlan ? (
+                <OptimizedGraphBlock optimizedPlan={optimizedPlan} />
+              ) : null}
+              {executionPlan ? (
+                <ExecutionPlanBlock executionPlan={executionPlan} />
+              ) : null}
 
               <RecognitionBlock
                 title="Consulta normalizada"
@@ -181,6 +197,173 @@ export default function QueryValidatorWorkbench() {
       </div>
 
       {toast ? <ValidationToast key={toast.id} toast={toast} /> : null}
+    </div>
+  );
+}
+
+function ExecutionPlanBlock({
+  executionPlan,
+}: {
+  executionPlan: ExecutionPlan;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-fuchsia-500/20 bg-fuchsia-500/10 px-5 py-5 dark:border-fuchsia-300/20 dark:bg-fuchsia-300/8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[0.68rem] font-semibold tracking-[0.18em] text-fuchsia-700 uppercase dark:text-fuchsia-300">
+            HU 05
+          </p>
+          <h3 className="mt-2 font-heading text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
+            Plano de execucao
+          </h3>
+          <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
+            A sequencia abaixo segue exatamente a dependencia do grafo
+            otimizado: das tabelas folha ate a projecao final.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <GraphSummaryPill
+            label="Etapas"
+            value={String(executionPlan.steps.length)}
+            tone="fuchsia"
+          />
+          <GraphSummaryPill
+            label="Ultima"
+            value={
+              executionPlan.steps[executionPlan.steps.length - 1]?.symbol ?? "?"
+            }
+            tone="fuchsia"
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {executionPlan.steps.map((step, index) => {
+          const isFinalStep = index === executionPlan.steps.length - 1;
+
+          return (
+            <div
+              key={step.nodeId}
+              className="rounded-[1.2rem] border border-black/6 bg-white/70 px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-white/6"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-fuchsia-600 text-sm font-semibold text-white shadow-sm dark:bg-fuchsia-300 dark:text-fuchsia-950">
+                  {step.order}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-fuchsia-500/20 bg-fuchsia-500/10 px-2.5 py-1 font-mono text-[0.7rem] text-fuchsia-800 dark:border-fuchsia-300/20 dark:bg-fuchsia-300/10 dark:text-fuchsia-200">
+                      {step.symbol}
+                    </span>
+                    <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                      {step.title}
+                    </p>
+                    {isFinalStep ? (
+                      <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[0.68rem] font-semibold tracking-[0.12em] text-cyan-800 uppercase dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-200">
+                        resultado final
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <p className="mt-2 font-mono text-xs leading-6 text-slate-700 dark:text-slate-200">
+                    {step.detail}
+                  </p>
+
+                  <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    {step.inputs.length > 0
+                      ? `Entradas: ${step.inputs.join(" + ")}`
+                      : "Origem: tabela folha do grafo otimizado."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OptimizedGraphBlock({
+  optimizedPlan,
+}: {
+  optimizedPlan: OptimizedQueryPlan;
+}) {
+  const nodeById = new Map(
+    optimizedPlan.graph.nodes.map((node) => [node.id, node]),
+  );
+
+  return (
+    <div className="rounded-[1.5rem] border border-lime-500/20 bg-lime-500/10 px-5 py-5 dark:border-lime-300/20 dark:bg-lime-300/8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[0.68rem] font-semibold tracking-[0.18em] text-lime-700 uppercase dark:text-lime-300">
+            HU 04
+          </p>
+          <h3 className="mt-2 font-heading text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
+            Grafo otimizado
+          </h3>
+          <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
+            O plano abaixo aplica selecoes antes, reduz atributos na sequencia
+            e escolhe a ordem de juncao sem gerar produto cartesiano.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <GraphSummaryPill
+            label="Selecoes"
+            value={String(optimizedPlan.pushedSelectionCount)}
+            tone="lime"
+          />
+          <GraphSummaryPill
+            label="Projecoes"
+            value={String(optimizedPlan.pushedProjectionCount)}
+            tone="lime"
+          />
+          <GraphSummaryPill
+            label="Juncoes"
+            value={String(optimizedPlan.joinOrder.length - 1)}
+            tone="lime"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="rounded-[1rem] border border-black/6 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-white/6">
+          <p className="text-[0.68rem] font-semibold tracking-[0.16em] text-slate-500 uppercase dark:text-slate-400">
+            Heuristicas aplicadas
+          </p>
+          <div className="mt-3 grid gap-2 text-sm text-slate-700 dark:text-slate-200">
+            {optimizedPlan.appliedHeuristics.map((heuristic) => (
+              <div
+                key={heuristic}
+                className="rounded-xl border border-black/5 bg-white/70 px-3 py-2 dark:border-white/10 dark:bg-white/5"
+              >
+                {heuristic}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[1rem] border border-black/6 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-white/6">
+          <p className="text-[0.68rem] font-semibold tracking-[0.16em] text-slate-500 uppercase dark:text-slate-400">
+            Ordem otimizada
+          </p>
+          <p className="mt-3 rounded-xl border border-black/5 bg-white/70 px-3 py-3 font-mono text-sm leading-6 text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">
+            {optimizedPlan.joinOrder.join(" -> ")}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-x-auto rounded-[1.5rem] border border-black/6 bg-white/80 bg-[radial-gradient(circle_at_1px_1px,rgba(101,163,13,0.11)_1px,transparent_0)] bg-[length:22px_22px] px-6 py-7 dark:border-white/10 dark:bg-[#0f1821] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(190,242,100,0.12)_1px,transparent_0)]">
+        <GraphTree
+          nodeId={optimizedPlan.graph.rootId}
+          nodeById={nodeById}
+          graph={optimizedPlan.graph}
+        />
+      </div>
     </div>
   );
 }
@@ -204,31 +387,76 @@ function OperatorGraphBlock({ graph }: { graph: OperatorGraph }) {
           </p>
         </div>
 
-        <div className="rounded-full border border-emerald-500/20 bg-white/60 px-3 py-1 font-mono text-xs text-emerald-800 dark:border-emerald-300/20 dark:bg-white/8 dark:text-emerald-200">
-          {graph.nodes.length} nos / {graph.edges.length} arestas
+        <div className="flex flex-wrap gap-2">
+          <GraphSummaryPill label="Nos" value={String(graph.nodes.length)} />
+          <GraphSummaryPill label="Arestas" value={String(graph.edges.length)} />
+          <GraphSummaryPill label="Raiz" value="π" />
         </div>
       </div>
 
-      <div className="mt-5 overflow-x-auto rounded-[1.25rem] border border-black/6 bg-white/70 px-4 py-5 dark:border-white/10 dark:bg-[#0f1821]">
+      <div className="mt-5 overflow-x-auto rounded-[1.5rem] border border-black/6 bg-white/80 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.09)_1px,transparent_0)] bg-[length:22px_22px] px-6 py-7 dark:border-white/10 dark:bg-[#0f1821] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(148,163,184,0.12)_1px,transparent_0)]">
         <GraphTree nodeId={graph.rootId} nodeById={nodeById} graph={graph} />
       </div>
 
-      <div className="mt-4 rounded-[1rem] border border-black/6 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-white/6">
-        <p className="text-[0.68rem] font-semibold tracking-[0.16em] text-slate-500 uppercase dark:text-slate-400">
-          Fluxo de resultados intermediarios
-        </p>
-        <div className="mt-3 grid gap-2 text-xs text-slate-700 dark:text-slate-200">
-          {graph.edges.map((edge) => (
-            <p key={edge.id} className="font-mono">
-              {formatGraphNodeLabel(nodeById.get(edge.from))} {"->"}{" "}
-              {formatGraphNodeLabel(nodeById.get(edge.to))}
-              <span className="ml-2 font-sans text-slate-500 dark:text-slate-400">
-                {edge.label}
-              </span>
-            </p>
-          ))}
+      <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-[1rem] border border-black/6 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-white/6">
+          <p className="text-[0.68rem] font-semibold tracking-[0.16em] text-slate-500 uppercase dark:text-slate-400">
+            Como ler
+          </p>
+          <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-200">
+            O fluxo sobe das tabelas para os operadores. Cada seta indica um
+            resultado intermediario usado pelo proximo operador, ate chegar na
+            projecao final.
+          </p>
+        </div>
+
+        <div className="rounded-[1rem] border border-black/6 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-white/6">
+          <p className="text-[0.68rem] font-semibold tracking-[0.16em] text-slate-500 uppercase dark:text-slate-400">
+            Arestas do grafo
+          </p>
+          <div className="mt-3 grid gap-2 text-xs text-slate-700 dark:text-slate-200">
+            {graph.edges.map((edge) => (
+              <div
+                key={edge.id}
+                className="flex flex-wrap items-center gap-2 rounded-xl border border-black/5 bg-white/70 px-3 py-2 font-mono dark:border-white/10 dark:bg-white/5"
+              >
+                <span>{formatGraphNodeLabel(nodeById.get(edge.from))}</span>
+                <span className="text-emerald-600 dark:text-emerald-300">
+                  {"->"}
+                </span>
+                <span>{formatGraphNodeLabel(nodeById.get(edge.to))}</span>
+                <span className="font-sans text-slate-500 dark:text-slate-400">
+                  {edge.label}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function GraphSummaryPill({
+  label,
+  value,
+  tone = "emerald",
+}: {
+  label: string;
+  value: string;
+  tone?: "emerald" | "lime" | "fuchsia";
+}) {
+  const toneClasses =
+    tone === "lime"
+      ? "border-lime-500/20 bg-white/60 text-lime-800 dark:border-lime-300/20 dark:bg-white/8 dark:text-lime-200"
+      : tone === "fuchsia"
+        ? "border-fuchsia-500/20 bg-white/60 text-fuchsia-800 dark:border-fuchsia-300/20 dark:bg-white/8 dark:text-fuchsia-200"
+      : "border-emerald-500/20 bg-white/60 text-emerald-800 dark:border-emerald-300/20 dark:bg-white/8 dark:text-emerald-200";
+
+  return (
+    <div className={`rounded-full border px-3 py-1 text-xs ${toneClasses}`}>
+      <span className="font-semibold">{label}:</span>{" "}
+      <span className="font-mono">{value}</span>
     </div>
   );
 }
@@ -255,13 +483,17 @@ function GraphTree({
 
       {childEdges.length > 0 ? (
         <>
-          <div className="h-5 w-px bg-slate-300 dark:bg-slate-600" />
-          <div className="flex items-start justify-center gap-4">
+          <div className="flex h-8 flex-col items-center">
+            <div className="h-6 w-px bg-gradient-to-b from-emerald-400 to-slate-300 dark:to-slate-600" />
+            <div className="size-2 rotate-45 border-r border-b border-slate-300 dark:border-slate-600" />
+          </div>
+          <div className="relative flex items-start justify-center gap-6 pt-5">
+            {childEdges.length > 1 ? (
+              <div className="absolute top-0 right-[12%] left-[12%] h-px bg-slate-300 dark:bg-slate-600" />
+            ) : null}
             {childEdges.map((edge) => (
               <div key={edge.id} className="flex flex-col items-center">
-                <span className="mb-2 rounded-full border border-black/6 bg-white px-2 py-1 text-[0.62rem] font-semibold text-slate-500 dark:border-white/10 dark:bg-white/8 dark:text-slate-400">
-                  {edge.label}
-                </span>
+                <div className="mb-4 h-5 w-px bg-slate-300 dark:bg-slate-600" />
                 <GraphTree nodeId={edge.from} nodeById={nodeById} graph={graph} />
               </div>
             ))}
@@ -277,8 +509,13 @@ function GraphNodeCard({ node }: { node: OperatorGraphNode }) {
 
   return (
     <div
-      className={`min-w-44 max-w-64 rounded-[1rem] border px-4 py-3 text-center shadow-sm ${styles.container}`}
+      className={`relative min-w-44 max-w-60 rounded-[1.15rem] border px-4 py-3 text-center shadow-[0_14px_34px_rgba(15,23,42,0.08)] ${styles.container}`}
     >
+      <span
+        className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-[0.58rem] font-bold tracking-[0.12em] uppercase ${styles.badge}`}
+      >
+        {getGraphNodeRole(node.type)}
+      </span>
       <div
         className={`mx-auto flex size-9 items-center justify-center rounded-full font-mono text-lg font-semibold ${styles.symbol}`}
       >
@@ -287,7 +524,7 @@ function GraphNodeCard({ node }: { node: OperatorGraphNode }) {
       <p className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
         {node.label}
       </p>
-      <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-600 dark:text-slate-300">
+      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
         {node.detail}
       </p>
     </div>
@@ -298,32 +535,49 @@ function getGraphNodeStyles(type: OperatorGraphNode["type"]) {
   if (type === "projection") {
     return {
       container:
-        "border-cyan-500/20 bg-cyan-50 text-cyan-950 dark:border-cyan-300/20 dark:bg-cyan-950/35",
+        "border-cyan-500/25 bg-cyan-50/95 text-cyan-950 dark:border-cyan-300/25 dark:bg-cyan-950/45",
       symbol: "bg-cyan-600 text-white dark:bg-cyan-300 dark:text-cyan-950",
+      badge: "bg-cyan-600/10 text-cyan-700 dark:bg-cyan-300/10 dark:text-cyan-200",
     };
   }
 
   if (type === "selection") {
     return {
       container:
-        "border-amber-500/20 bg-amber-50 text-amber-950 dark:border-amber-300/20 dark:bg-amber-950/35",
+        "border-amber-500/25 bg-amber-50/95 text-amber-950 dark:border-amber-300/25 dark:bg-amber-950/45",
       symbol: "bg-amber-500 text-white dark:bg-amber-300 dark:text-amber-950",
+      badge:
+        "bg-amber-500/10 text-amber-700 dark:bg-amber-300/10 dark:text-amber-200",
     };
   }
 
   if (type === "join") {
     return {
       container:
-        "border-sky-500/20 bg-sky-50 text-sky-950 dark:border-sky-300/20 dark:bg-sky-950/35",
+        "border-sky-500/25 bg-sky-50/95 text-sky-950 dark:border-sky-300/25 dark:bg-sky-950/45",
       symbol: "bg-sky-600 text-white dark:bg-sky-300 dark:text-sky-950",
+      badge: "bg-sky-600/10 text-sky-700 dark:bg-sky-300/10 dark:text-sky-200",
     };
   }
 
   return {
     container:
-      "border-slate-300/70 bg-slate-50 text-slate-950 dark:border-white/10 dark:bg-white/6",
+      "border-slate-300/80 bg-slate-50/95 text-slate-950 dark:border-white/10 dark:bg-white/8",
     symbol: "bg-slate-900 text-white dark:bg-white dark:text-slate-950",
+    badge: "bg-slate-900/8 text-slate-600 dark:bg-white/10 dark:text-slate-300",
   };
+}
+
+function getGraphNodeRole(type: OperatorGraphNode["type"]) {
+  if (type === "projection") {
+    return "raiz";
+  }
+
+  if (type === "table") {
+    return "folha";
+  }
+
+  return "operador";
 }
 
 function formatGraphNodeLabel(node: OperatorGraphNode | undefined) {
