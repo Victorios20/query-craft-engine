@@ -1,12 +1,17 @@
 'use client'
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
   Database,
+  Expand,
   FileSearch,
   GitBranchPlus,
+  Minus,
+  Plus,
+  RotateCcw,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +42,10 @@ type ValidationToast = {
   title: string;
   description: string;
 };
+
+const GRAPH_MIN_SCALE = 0.12;
+const GRAPH_MAX_SCALE = 1.6;
+const GRAPH_SCALE_STEP = 0.1;
 
 export default function QueryValidatorWorkbench() {
   const [query, setQuery] = useState("");
@@ -76,7 +85,7 @@ export default function QueryValidatorWorkbench() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
+    <div className="w-full">
       <div className="rounded-[2rem] border border-black/6 bg-white/80 shadow-[0_28px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
         <div className="border-b border-black/6 px-6 py-5 dark:border-white/10 sm:px-8">
           <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[0.68rem] font-semibold tracking-[0.22em] text-emerald-700 uppercase dark:text-emerald-300">
@@ -357,13 +366,12 @@ function OptimizedGraphBlock({
         </div>
       </div>
 
-      <div className="mt-5 overflow-x-auto rounded-[1.5rem] border border-black/6 bg-white/80 bg-[radial-gradient(circle_at_1px_1px,rgba(101,163,13,0.11)_1px,transparent_0)] bg-[length:22px_22px] px-6 py-7 dark:border-white/10 dark:bg-[#0f1821] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(190,242,100,0.12)_1px,transparent_0)]">
-        <GraphTree
-          nodeId={optimizedPlan.graph.rootId}
-          nodeById={nodeById}
-          graph={optimizedPlan.graph}
-        />
-      </div>
+      <GraphViewport
+        graph={optimizedPlan.graph}
+        nodeById={nodeById}
+        tone="lime"
+        title="Grafo otimizado"
+      />
     </div>
   );
 }
@@ -394,9 +402,12 @@ function OperatorGraphBlock({ graph }: { graph: OperatorGraph }) {
         </div>
       </div>
 
-      <div className="mt-5 overflow-x-auto rounded-[1.5rem] border border-black/6 bg-white/80 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.09)_1px,transparent_0)] bg-[length:22px_22px] px-6 py-7 dark:border-white/10 dark:bg-[#0f1821] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(148,163,184,0.12)_1px,transparent_0)]">
-        <GraphTree nodeId={graph.rootId} nodeById={nodeById} graph={graph} />
-      </div>
+      <GraphViewport
+        graph={graph}
+        nodeById={nodeById}
+        tone="emerald"
+        title="Grafo de operadores"
+      />
 
       <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="rounded-[1rem] border border-black/6 bg-white/60 px-4 py-4 dark:border-white/10 dark:bg-white/6">
@@ -458,6 +469,287 @@ function GraphSummaryPill({
       <span className="font-semibold">{label}:</span>{" "}
       <span className="font-mono">{value}</span>
     </div>
+  );
+}
+
+function GraphViewport({
+  graph,
+  nodeById,
+  tone,
+  title,
+}: {
+  graph: OperatorGraph;
+  nodeById: Map<string, OperatorGraphNode>;
+  tone: "emerald" | "lime";
+  title: string;
+}) {
+  const [scale, setScale] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const inlineViewportRef = useRef<HTMLDivElement | null>(null);
+  const inlineContentRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenViewportRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenContentRef = useRef<HTMLDivElement | null>(null);
+  const viewportStyles = getGraphViewportStyles(tone);
+  const graphSignature = `${graph.rootId}:${graph.nodes.length}:${graph.edges.length}`;
+  const zoomPercentage = `${Math.round(scale * 100)}%`;
+  const canZoomOut = scale - GRAPH_MIN_SCALE > 0.01;
+  const canZoomIn = GRAPH_MAX_SCALE - scale > 0.01;
+  const isDefaultScale = Math.abs(scale - 1) < 0.01;
+
+  useEffect(() => {
+    const animationFrameId = window.requestAnimationFrame(() => {
+      fitGraphToViewport("inline");
+    });
+
+    return () => window.cancelAnimationFrame(animationFrameId);
+  }, [graphSignature]);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsFullscreen(false);
+      }
+    };
+    const handleResize = () => {
+      window.requestAnimationFrame(() => {
+        fitGraphToViewport("fullscreen");
+      });
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleEscape);
+    window.addEventListener("resize", handleResize);
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      fitGraphToViewport("fullscreen");
+    });
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("resize", handleResize);
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [isFullscreen]);
+
+  return (
+    <>
+      <div className={`mt-5 rounded-[1.5rem] border ${viewportStyles.shell}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/6 px-4 py-3 dark:border-white/10">
+          <p className="text-xs leading-5 text-slate-600 dark:text-slate-300">
+            Use os controles para ampliar ou abra em tela cheia quando a
+            consulta gerar um grafo maior.
+          </p>
+
+          {renderControls({
+            showFullscreenButton: true,
+            showCloseButton: false,
+          })}
+        </div>
+
+        <div
+          ref={inlineViewportRef}
+          className={`overflow-auto rounded-b-[1.5rem] px-6 py-7 ${viewportStyles.canvas}`}
+        >
+          {renderGraphCanvas(false)}
+        </div>
+      </div>
+
+      {isFullscreen ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 p-4 backdrop-blur-sm sm:p-6">
+          <div className="mx-auto flex h-full w-full max-w-[96vw] flex-col rounded-[1.75rem] border border-white/10 bg-slate-950/96 shadow-[0_32px_120px_rgba(15,23,42,0.48)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-[0.68rem] font-semibold tracking-[0.18em] text-cyan-300 uppercase">
+                  Visualizacao ampliada
+                </p>
+                <h4 className="mt-1 text-base font-semibold text-white">
+                  {title}
+                </h4>
+              </div>
+
+              {renderControls({
+                showFullscreenButton: false,
+                showCloseButton: true,
+              })}
+            </div>
+
+            <div
+              ref={fullscreenViewportRef}
+              className={`min-h-0 flex-1 overflow-auto rounded-b-[1.75rem] px-6 py-8 ${viewportStyles.canvas}`}
+            >
+              {renderGraphCanvas(true)}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+
+  function renderControls({
+    showFullscreenButton,
+    showCloseButton,
+  }: {
+    showFullscreenButton: boolean;
+    showCloseButton: boolean;
+  }) {
+    return (
+      <div className="flex items-center gap-2">
+        <GraphZoomButton
+          ariaLabel="Diminuir zoom do grafo"
+          disabled={!canZoomOut}
+          onClick={() =>
+            setScale((currentScale) =>
+              clampGraphScale(currentScale - GRAPH_SCALE_STEP),
+            )
+          }
+        >
+          <Minus className="size-4" />
+        </GraphZoomButton>
+
+        <div className="min-w-16 rounded-full border border-black/8 bg-white/80 px-3 py-1 text-center font-mono text-xs text-slate-700 dark:border-white/10 dark:bg-white/8 dark:text-slate-200">
+          {zoomPercentage}
+        </div>
+
+        <GraphZoomButton
+          ariaLabel="Aumentar zoom do grafo"
+          disabled={!canZoomIn}
+          onClick={() =>
+            setScale((currentScale) =>
+              clampGraphScale(currentScale + GRAPH_SCALE_STEP),
+            )
+          }
+        >
+          <Plus className="size-4" />
+        </GraphZoomButton>
+
+        <GraphZoomButton
+          ariaLabel="Redefinir zoom do grafo"
+          disabled={isDefaultScale}
+          onClick={() => setScale(1)}
+        >
+          <RotateCcw className="size-4" />
+        </GraphZoomButton>
+
+        <button
+          type="button"
+          onClick={() =>
+            fitGraphToViewport(
+              showCloseButton ? "fullscreen" : "inline",
+            )
+          }
+          className="rounded-full border border-black/8 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-cyan-500/30 hover:text-cyan-700 dark:border-white/10 dark:bg-white/8 dark:text-slate-200 dark:hover:border-cyan-300/30 dark:hover:text-cyan-200"
+        >
+          Ajustar
+        </button>
+
+        {showFullscreenButton ? (
+          <GraphZoomButton
+            ariaLabel="Abrir grafo em tela cheia"
+            disabled={false}
+            onClick={() => {
+              setIsFullscreen(true);
+            }}
+          >
+            <Expand className="size-4" />
+          </GraphZoomButton>
+        ) : null}
+
+        {showCloseButton ? (
+          <GraphZoomButton
+            ariaLabel="Fechar tela cheia do grafo"
+            disabled={false}
+            onClick={() => setIsFullscreen(false)}
+          >
+            <X className="size-4" />
+          </GraphZoomButton>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderGraphCanvas(isExpanded: boolean) {
+    return (
+      <div
+        className={`flex min-w-full justify-center ${
+          isExpanded ? "min-h-full items-start" : ""
+        }`}
+      >
+        <div
+          ref={isExpanded ? fullscreenContentRef : inlineContentRef}
+          className="w-fit transition-transform duration-200 ease-out"
+          style={{
+            transform: `scale(${scale})`,
+            transformOrigin: "top center",
+          }}
+        >
+          <GraphTree nodeId={graph.rootId} nodeById={nodeById} graph={graph} />
+        </div>
+      </div>
+    );
+  }
+
+  function fitGraphToViewport(target: "inline" | "fullscreen") {
+    const viewportRef =
+      target === "fullscreen" ? fullscreenViewportRef : inlineViewportRef;
+    const contentRef =
+      target === "fullscreen" ? fullscreenContentRef : inlineContentRef;
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+
+    if (!viewport || !content) {
+      return;
+    }
+
+    const availableWidth = Math.max(viewport.clientWidth - 32, 0);
+    const availableHeight =
+      target === "fullscreen"
+        ? Math.max(viewport.clientHeight - 32, 0)
+        : Number.POSITIVE_INFINITY;
+    const naturalWidth = content.scrollWidth;
+    const naturalHeight = content.scrollHeight;
+
+    if (!naturalWidth || !naturalHeight) {
+      return;
+    }
+
+    const widthScale = availableWidth / naturalWidth;
+    const heightScale =
+      availableHeight === Number.POSITIVE_INFINITY
+        ? 1
+        : availableHeight / naturalHeight;
+    const fittedScale = Math.min(widthScale, heightScale, 1);
+
+    setScale(clampGraphScale(fittedScale));
+  }
+}
+
+function GraphZoomButton({
+  children,
+  disabled,
+  onClick,
+  ariaLabel,
+}: {
+  children: React.ReactNode;
+  disabled: boolean;
+  onClick: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={onClick}
+      disabled={disabled}
+      className="flex size-9 items-center justify-center rounded-full border border-black/8 bg-white/80 text-slate-700 transition hover:border-cyan-500/30 hover:text-cyan-700 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-white/8 dark:text-slate-200 dark:hover:border-cyan-300/30 dark:hover:text-cyan-200"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -566,6 +858,26 @@ function getGraphNodeStyles(type: OperatorGraphNode["type"]) {
     symbol: "bg-slate-900 text-white dark:bg-white dark:text-slate-950",
     badge: "bg-slate-900/8 text-slate-600 dark:bg-white/10 dark:text-slate-300",
   };
+}
+
+function getGraphViewportStyles(tone: "emerald" | "lime") {
+  if (tone === "lime") {
+    return {
+      shell: "border-black/6 bg-white/55 dark:border-white/10 dark:bg-white/5",
+      canvas:
+        "bg-white/80 bg-[radial-gradient(circle_at_1px_1px,rgba(101,163,13,0.11)_1px,transparent_0)] bg-[length:22px_22px] dark:bg-[#0f1821] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(190,242,100,0.12)_1px,transparent_0)]",
+    };
+  }
+
+  return {
+    shell: "border-black/6 bg-white/55 dark:border-white/10 dark:bg-white/5",
+    canvas:
+      "bg-white/80 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.09)_1px,transparent_0)] bg-[length:22px_22px] dark:bg-[#0f1821] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(148,163,184,0.12)_1px,transparent_0)]",
+  };
+}
+
+function clampGraphScale(scale: number) {
+  return Math.min(GRAPH_MAX_SCALE, Math.max(GRAPH_MIN_SCALE, scale));
 }
 
 function getGraphNodeRole(type: OperatorGraphNode["type"]) {
