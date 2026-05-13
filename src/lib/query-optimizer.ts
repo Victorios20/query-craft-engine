@@ -65,12 +65,12 @@ export function buildOptimizedQueryPlan(
     tableInfos.map((tableInfo) => [tableInfo.key, tableInfo]),
   );
   const referenceIndex = buildReferenceIndex(validationResult, tableInfos);
-  const { localPredicates, sharedPredicates } = classifyWherePredicates(
+  const { localPredicates, sharedPredicates } = classifyWherePredicates( //classifica as condições do where entre local e compartilhado
     validationResult.whereCondition,
     referenceIndex,
   );
-  const projectionPlan = buildProjectionPlan(validationResult, tableInfos);
-  const joinCandidates = buildJoinCandidates(joins, referenceIndex, tableInfos);
+  const projectionPlan = buildProjectionPlan(validationResult, tableInfos); //reduz a quantidade de colunas antecipando a projeção
+  const joinCandidates = buildJoinCandidates(joins, referenceIndex, tableInfos);// Junções mais restritivas primeiro e evit produto cartesiano
   const nodes: OperatorGraph["nodes"] = [];
   const edges: OperatorGraph["edges"] = [];
   const branchByTableKey = new Map<string, string>();
@@ -94,7 +94,7 @@ export function buildOptimizedQueryPlan(
     localScoreByTable,
     projectionPlan,
   );
-  let currentBranchId = ensureTableBranch(startTable.key);
+  let currentBranchId = ensureTableBranch(startTable.key);// redução de linhas abaixando seleção/where 
   let currentTableKeys = new Set([startTable.key]);
   joinedTableOrder.push(formatRelation(startTable.binding));
   currentBranchId = applySharedSelections(currentBranchId, currentTableKeys);
@@ -159,13 +159,10 @@ export function buildOptimizedQueryPlan(
 
   return {
     // Grafo otimizado gerado em memoria.
-    // rootId aponta para a raiz do grafo, que e a projecao final.
-    // nodes guarda todos os nos do plano otimizado.
-    // edges guarda as ligacoes entre os nos.
     graph: {
-      rootId: projectionNodeId,
-      nodes,
-      edges,
+      rootId: projectionNodeId,  // rootId aponta para a raiz do grafo, que e a projecao final.
+      nodes,// nodes guarda todos os nos do plano otimizado.
+      edges,// edges guarda as ligacoes entre os nos.
     },
 
     // Resumo textual das heuristicas aplicadas na otimizacao,
@@ -370,7 +367,7 @@ function chooseNextJoin(
 
 function buildProjectionPlan(
   validationResult: QueryValidationResult,
-  tableInfos: TableInfo[],
+  tableInfos: TableInfo[], // tabelas usadas no plano otimizado
 ) {
   const blockedTables = new Set<string>();
   const hasGlobalWildcard = validationResult.selectItems.some(
