@@ -738,10 +738,10 @@ function parseFromClause(
 }
 
 export function validateSqlQuery(query: string): QueryValidationResult {
-  const issues: ValidationIssue[] = [];
-  const normalizedQuery = normalizeQueryWhitespace(query);
-  const resolvedColumns: ResolvedColumn[] = [];
-  const clauses = extractQueryClauses(normalizedQuery, issues);
+  const issues: ValidationIssue[] = []; // lista de erros encontrados durante a validacao da consulta
+  const normalizedQuery = normalizeQueryWhitespace(query); //padroniza a consulta removendo os espaços 
+  const resolvedColumns: ResolvedColumn[] = []; //array de campos da consulta reconhecidos
+  const clauses = extractQueryClauses(normalizedQuery, issues); //extrai as clausulas SELECT, FROM e WHERE da consulta
 
   if (!clauses) {
     return {
@@ -758,21 +758,23 @@ export function validateSqlQuery(query: string): QueryValidationResult {
     };
   }
 
-  const selectItems = splitSelectClause(clauses.selectClause);
-  const { tables, joins } = parseFromClause(
+  const selectItems = splitSelectClause(clauses.selectClause); //separa os itens da clausula SELECT
+
+  const { tables, joins } = parseFromClause( //analisa a clausula FROM, reconhecendo as tabelas usadas e as ligacoes entre elas
     clauses.fromClause,
     issues,
     resolvedColumns,
   );
 
-  validateTablesAndAliases(tables, issues);
+  validateTablesAndAliases(tables, issues);//valida se as tabelas usadas existem no modelo e se os aliases sao validos e unicos
+
   resolvedColumns.push(
-    ...parseSelectColumns(selectItems, tables, issues),
+    ...parseSelectColumns(selectItems, tables, issues),//pega cada item do SELECT e tenta resolver no modelo, ligando o campo à coluna real da tabela.
   );
 
   if (clauses.whereClause) {
     resolvedColumns.push(
-      ...parseConditions(clauses.whereClause, "WHERE", tables, issues),
+      ...parseConditions(clauses.whereClause, "WHERE", tables, issues), // quebra a condição em partes menores, reconhece operadores, valores e campos, e depois valida a estrutura lógica e semântica.
     );
   }
 

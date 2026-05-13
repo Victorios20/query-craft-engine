@@ -31,7 +31,7 @@ export type OperatorGraph = {
   edges: OperatorGraphEdge[];
 };
 
-export function buildOperatorGraph(
+export function buildOperatorGraph( // Recebe um QueryValidationResult e retorna um OperatorGraph com a estrutura do grafo da consulta.
   validationResult: QueryValidationResult,
 ): OperatorGraph | null {
   const tables = Array.isArray(validationResult.tables)
@@ -118,10 +118,11 @@ export function buildOperatorGraph(
   });
 
   return {
-    rootId: projectionNodeId,
-    nodes,
-    edges,
+    rootId: projectionNodeId, // id da raiz do grafo, que aqui é a projecao final
+    nodes, // lista de nos do grafo: tabelas, selecao, juncao e projecao
+    edges, // ligacoes entre os nos, mostrando o fluxo da consulta
   };
+
 }
 
 function addTableNode(

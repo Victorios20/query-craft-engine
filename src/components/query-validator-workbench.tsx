@@ -51,9 +51,13 @@ export default function QueryValidatorWorkbench() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<QueryValidationResult | null>(null);
   const [toast, setToast] = useState<ValidationToast | null>(null);
+
   const algebra = result?.isValid ? buildRelationalAlgebra(result) : null;
+
   const operatorGraph = result?.isValid ? buildOperatorGraph(result) : null;
+
   const optimizedPlan = result?.isValid ? buildOptimizedQueryPlan(result) : null;
+  
   const executionPlan = optimizedPlan ? buildExecutionPlan(optimizedPlan) : null;
 
   useEffect(() => {
@@ -68,21 +72,31 @@ export default function QueryValidatorWorkbench() {
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
-  const handleValidate = () => {
-    const validationResult = validateSqlQuery(query);
+const handleValidate = () => {
+  const validationResult = validateSqlQuery(query);
 
-    setResult(validationResult);
-    setToast({
-      id: Date.now(),
-      status: validationResult.isValid ? "success" : "error",
-      title: validationResult.isValid
-        ? "Consulta validada"
-        : "Consulta com pendencias",
-      description: validationResult.isValid
-        ? "Algebra, grafo logico, grafo otimizado e plano de execucao gerados com sucesso."
-        : `${validationResult.issues.length} problema(s) encontrado(s). Confira os detalhes abaixo.`,
-    });
-  };
+  // - isValid: se a consulta passou em todas as validacoes
+  // - issues: lista de erros encontrados durante a analise
+  // - normalizedQuery: consulta padronizada, sem ruido de espacos e formatacao
+  // - tables / joins: tabelas e juncoes reconhecidas na consulta
+  // - resolvedColumns: campos identificados e associados as tabelas corretas
+  // - selectItems / whereCondition: partes estruturadas da query
+  // - joinCount / hasWhere: metadados usados nas proximas etapas
+  // Esse objeto vira a base para gerar algebra relacional, grafo e plano de execucao.
+  setResult(validationResult);
+
+  setToast({
+    id: Date.now(),
+    status: validationResult.isValid ? "success" : "error",
+    title: validationResult.isValid
+      ? "Consulta validada"
+      : "Consulta com pendencias",
+    description: validationResult.isValid
+      ? "Algebra, grafo logico, grafo otimizado e plano de execucao gerados com sucesso."
+      : `${validationResult.issues.length} problema(s) encontrado(s). Confira os detalhes abaixo.`,
+  });
+};
+
 
   return (
     <div className="w-full">

@@ -48,35 +48,35 @@ export function buildExecutionPlan(
   }
 
   return {
-    rootNodeId: graph.rootId,
+    rootNodeId: graph.rootId, // raiz do grafo otimizado que originou o plano
     steps: orderedNodeIds.map((nodeId, index) => {
       const node = nodeById.get(nodeId);
 
       if (!node) {
         return {
-          order: index + 1,
-          nodeId,
-          nodeType: "table",
-          symbol: "?",
-          title: "Operacao desconhecida",
-          detail: "No nao encontrado no grafo otimizado.",
-          inputs: [],
+          order: index + 1, // ordem da etapa no plano
+          nodeId, // id do no correspondente no grafo
+          nodeType: "table", // tipo usado como fallback
+          symbol: "?", // simbolo visual de operacao desconhecida
+          title: "Operacao desconhecida", // titulo exibido da etapa
+          detail: "No nao encontrado no grafo otimizado.", // descricao da falha
+          inputs: [], // entradas da etapa
         };
       }
 
       return {
-        order: index + 1,
-        nodeId,
-        nodeType: node.type,
-        symbol: node.symbol,
-        title: formatStepTitle(node),
-        detail: node.detail,
+        order: index + 1, // numero da etapa na ordem de execucao
+        nodeId, // id do no no grafo otimizado
+        nodeType: node.type, // tipo da operacao: tabela, selecao, projecao ou juncao
+        symbol: node.symbol, // simbolo visual da operacao: R, σ, π ou ⋈
+        title: formatStepTitle(node), // nome legivel da etapa
+        detail: node.detail, // condicao ou descricao da operacao
         inputs: (dependencyEdgesByNodeId.get(nodeId) ?? [])
           .map((edge) => nodeById.get(edge.from))
           .filter((dependencyNode): dependencyNode is OperatorGraphNode =>
             Boolean(dependencyNode),
           )
-          .map((dependencyNode) => formatNodeLabel(dependencyNode)),
+          .map((dependencyNode) => formatNodeLabel(dependencyNode)), // entradas usadas nessa etapa
       };
     }),
   };
@@ -109,6 +109,7 @@ export function buildExecutionPlan(
     return true;
   }
 }
+
 
 function formatStepTitle(node: OperatorGraphNode) {
   if (node.type === "table") {

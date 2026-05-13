@@ -158,20 +158,36 @@ export function buildOptimizedQueryPlan(
   });
 
   return {
+    // Grafo otimizado gerado em memoria.
+    // rootId aponta para a raiz do grafo, que e a projecao final.
+    // nodes guarda todos os nos do plano otimizado.
+    // edges guarda as ligacoes entre os nos.
     graph: {
       rootId: projectionNodeId,
       nodes,
       edges,
     },
+
+    // Resumo textual das heuristicas aplicadas na otimizacao,
+    // como reducao de tuplas, reducao de atributos e ordem das juncoes.
     appliedHeuristics: buildHeuristicSummary(
       pushedSelectionCount,
       pushedProjectionCount,
       joins.length,
     ),
+
+    // Ordem final escolhida para processar as relacoes e juncoes.
     joinOrder: joinedTableOrder,
+
+    // Quantidade de selecoes empurradas para perto das tabelas
+    // para reduzir o numero de tuplas o quanto antes.
     pushedSelectionCount,
+
+    // Quantidade de projecoes antecipadas
+    // para reduzir atributos antes das etapas seguintes.
     pushedProjectionCount,
   };
+
 
   function nextNodeId(prefix: string) {
     nodeSequence += 1;
